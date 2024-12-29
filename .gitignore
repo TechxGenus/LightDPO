@@ -1,0 +1,6 @@
+__pycache__
+**/*.out
+**/*.json
+**/*.jsonl
+*tmp*
+**/*.log
