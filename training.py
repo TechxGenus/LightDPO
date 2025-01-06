@@ -98,18 +98,18 @@ class DPODataCollator(DefaultDataCollator):
         rejected_cum_lengths = []
 
         for feature in features:
-            chosen_len = len(feature["chosen_input_ids"])
-            ret["input_ids"] += feature["chosen_input_ids"]
-            ret["labels"] += [IGNORE_INDEX] + feature["chosen_labels"][1:]
+            chosen_len = len(feature["chosen_input_ids"]) - 1
+            ret["input_ids"] += feature["chosen_input_ids"][:-1]
+            ret["labels"] += feature["chosen_labels"][1:]
             ret["position_ids"] += list(range(chosen_len))
             ret["chosen_lengths"].append(chosen_len)
             current_length += chosen_len
             chosen_cum_lengths.append(current_length)
 
         for feature in features:
-            rejected_len = len(feature["rejected_input_ids"])
-            ret["input_ids"] += feature["rejected_input_ids"]
-            ret["labels"] += [IGNORE_INDEX] + feature["rejected_labels"][1:]
+            rejected_len = len(feature["rejected_input_ids"]) - 1
+            ret["input_ids"] += feature["rejected_input_ids"][:-1]
+            ret["labels"] += feature["rejected_labels"][1:]
             ret["position_ids"] += list(range(rejected_len))
             ret["rejected_lengths"].append(rejected_len)
             current_length += rejected_len
@@ -146,21 +146,20 @@ class DPOTrainer(Trainer):
         return self.accelerator.prepare(DataLoader(self.train_dataset, **dataloader_params))
 
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=-1):
         outputs = model(
             input_ids=inputs["input_ids"],
             position_ids=inputs["position_ids"]
         )
         logits = outputs.logits
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = inputs["labels"][..., 1:].contiguous()
+        labels = inputs["labels"]
         
         loss_fct = torch.nn.CrossEntropyLoss(reduction='none', ignore_index=IGNORE_INDEX)
         token_loss = loss_fct(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1)
+            logits.view(-1, logits.size(-1)),
+            labels.view(-1)
         )
-        token_loss = token_loss.view(shift_labels.shape)
+        token_loss = token_loss.view(labels.shape)
 
         chosen_logprobs = []
         rejected_logprobs = []
